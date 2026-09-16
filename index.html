@@ -1207,12 +1207,18 @@ function readFileAsArrayBuffer(file){
 
 let lastResumen = [];
 let currentEstadoFilter = 'todos';
-let lastVisitasRaw = [];   // [{cedula, nombre, fechaKey, pdv}] — visitas individuales (Retail+Link), sin agregar por día
+let lastVisitasRaw = [];   // [{cedula, nombre, fechaKey, pdv}] — visitas individuales (Gutrade+Retail+Link), sin agregar por día
 let lastRoster = {};       // {cedula: nombre} vigente tras el último "Procesar cruce"
 
-function buildVisitasRawDedup(existentes, retailRecords, linkRecords){
+function buildVisitasRawDedup(existentes, gutradeRecords, retailRecords, linkRecords){
   const map = new Map();
   (existentes||[]).forEach(v => map.set(v.cedula+'|'+v.fechaKey+'|'+normalize(v.pdv), v));
+  gutradeRecords.forEach(g => {
+    if(!g.fechaKey || !g.punto) return;
+    if(normalize(g.punto).includes('descanso') || normalize(g.punto).includes('traslado')) return;
+    const key = g.cedula+'|'+g.fechaKey+'|'+normalize(g.punto);
+    if(!map.has(key)) map.set(key, { cedula:g.cedula, nombre:g.nombre, fechaKey:g.fechaKey, pdv:g.punto });
+  });
   retailRecords.forEach(r => {
     if(!r.fechaKey || !r.sucursal) return;
     const key = r.cedula+'|'+r.fechaKey+'|'+normalize(r.sucursal);
@@ -1400,13 +1406,13 @@ document.getElementById('btn-procesar').addEventListener('click', async () => {
   lastResumen = resumen;
   renderResumen(resumen);
 
-  // NUEVO: roster vigente + visitas individuales (Retail+Link, sin agregar por día) para el
+  // NUEVO: roster vigente + visitas individuales (Gutrade+Retail+Link, sin agregar por día) para el
   // sub-apartado de Formularios (solo se usa/renderiza en Minerva, pero calcularlo no afecta
   // en nada el flujo de Unilever).
   lastRoster = roster;
   const visitasRawMerged = buildVisitasRawDedup(
     [...persisted.retailVisitasRaw, ...persisted.linkVisitasRaw],
-    freshRetailRecords, freshLinkRecords
+    freshGutradeRecords, freshRetailRecords, freshLinkRecords
   );
   lastVisitasRaw = visitasRawMerged;
   const retailVisitasRawToSave = visitasRawMerged; // se guarda todo junto, deduplicado
