@@ -131,6 +131,28 @@
     font-family:inherit;
   }
   .filelist .empty{color:var(--ink-soft); font-style:italic; font-family:inherit;}
+  .filelist li.file-uploaded{
+    background:var(--gold-soft);
+    border:1px solid var(--gold);
+    border-radius:3px;
+    padding:8px 10px;
+    gap:8px;
+  }
+  .filelist li.file-uploaded .file-check{
+    color:var(--gold); font-weight:700; font-family:inherit; flex:none;
+  }
+  .filelist li.file-uploaded .file-name{
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink);
+  }
+  .filelist li.file-uploaded .file-tag{
+    flex:none; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em;
+    color:var(--navy); font-family:inherit; font-weight:700;
+  }
+  .addmore-btn{
+    display:block; margin-top:10px; font-size:12px; background:none; border:none;
+    color:var(--navy); text-decoration:underline; cursor:pointer; font-family:inherit; padding:0;
+  }
+  .addmore-btn:hover{color:var(--gold);}
 
   .actionbar{
     display:flex; align-items:center; justify-content:space-between;
@@ -1042,19 +1064,26 @@ async function saveFormPersisted(brand, categoriaKey, arr){
   await idbSet(bk(brand, 'form_'+categoriaKey), arr);
 }
 
-function setupDropzone(dzId, inputId, listId, stateKey){
-  const dz = document.getElementById(dzId);
-  const input = document.getElementById(inputId);
+const DROPZONES = [
+  { stateKey:'gutradeFiles', dz:'dz-gutrade', input:'input-gutrade', list:'list-gutrade', multiple:true },
+  { stateKey:'retailFiles', dz:'dz-retail', input:'input-retail', list:'list-retail', multiple:true },
+  { stateKey:'linkFiles', dz:'dz-link', input:'input-link', list:'list-link', multiple:true },
+  { stateKey:'nominaFiles', dz:'dz-nomina', input:'input-nomina', list:'list-nomina', multiple:false },
+].concat(FORM_TYPES.map(ft => ({ stateKey: ft.stateKey, dz: ft.dz, input: ft.input, list: ft.list, multiple:true })));
+
+function setupDropzone(cfg){
+  const dz = document.getElementById(cfg.dz);
+  const input = document.getElementById(cfg.input);
   if(!dz || !input) return;
   dz.addEventListener('click', () => input.click());
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
   dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
   dz.addEventListener('drop', e => {
     e.preventDefault(); dz.classList.remove('drag');
-    addFiles(Array.from(e.dataTransfer.files), stateKey, listId);
+    addFiles(Array.from(e.dataTransfer.files), cfg.stateKey, cfg.list);
   });
   input.addEventListener('change', e => {
-    addFiles(Array.from(e.target.files), stateKey, listId);
+    addFiles(Array.from(e.target.files), cfg.stateKey, cfg.list);
     input.value = '';
   });
 }
@@ -1078,28 +1107,59 @@ function removeFile(stateKey, listId, idx){
   updateProcessButton();
   updateFormProcessButton();
 }
+function ensureAddMoreLink(listId, cfg){
+  const ul = document.getElementById(listId);
+  if(!ul) return;
+  let link = document.getElementById('addmore-'+listId);
+  if(!link){
+    link = document.createElement('button');
+    link.type = 'button';
+    link.id = 'addmore-'+listId;
+    link.className = 'link-btn addmore-btn';
+    link.textContent = '+ agregar otro archivo';
+    link.addEventListener('click', () => {
+      const dz = document.getElementById(cfg.dz);
+      if(dz) dz.style.display = '';
+    });
+    ul.insertAdjacentElement('afterend', link);
+  }
+}
+function removeAddMoreLink(listId){
+  const link = document.getElementById('addmore-'+listId);
+  if(link) link.remove();
+}
 function renderFileList(stateKey, listId){
   const ul = document.getElementById(listId);
   if(!ul) return;
+  const cfg = DROPZONES.find(d => d.list === listId);
+  const dz = cfg ? document.getElementById(cfg.dz) : null;
   const files = state[currentBrand] ? state[currentBrand][stateKey] : [];
+
   if(!files || files.length === 0){
-    ul.innerHTML = '<li class="empty">Sin archivos cargados</li>';
+    ul.innerHTML = '';
+    if(dz) dz.style.display = '';
+    removeAddMoreLink(listId);
     return;
   }
+
+  if(dz) dz.style.display = 'none';
   ul.innerHTML = files.map((f,i) =>
-    `<li><span>${f.name}</span><button data-idx="${i}" data-key="${stateKey}" data-list="${listId}">quitar</button></li>`
+    `<li class="file-uploaded">
+       <span class="file-check">✔</span>
+       <span class="file-name">${f.name}</span>
+       <span class="file-tag">archivo subido</span>
+       <button type="button" data-idx="${i}" data-key="${stateKey}" data-list="${listId}">quitar</button>
+     </li>`
   ).join('');
   ul.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => removeFile(btn.dataset.key, btn.dataset.list, +btn.dataset.idx));
   });
+
+  if(cfg && cfg.multiple) ensureAddMoreLink(listId, cfg);
+  else removeAddMoreLink(listId);
 }
 function renderAllFileLists(){
-  ['gutradeFiles','retailFiles','linkFiles','nominaFiles'].forEach(k => {});
-  renderFileList('gutradeFiles','list-gutrade');
-  renderFileList('retailFiles','list-retail');
-  renderFileList('linkFiles','list-link');
-  renderFileList('nominaFiles','list-nomina');
-  FORM_TYPES.forEach(ft => renderFileList(ft.stateKey, ft.list));
+  DROPZONES.forEach(cfg => renderFileList(cfg.stateKey, cfg.list));
 }
 function updateProcessButton(){
   const s = state[currentBrand];
@@ -1114,11 +1174,8 @@ function updateFormProcessButton(){
   btn.disabled = !anyForm || !lastVisitasRaw.length;
 }
 
-FORM_TYPES.forEach(ft => setupDropzone(ft.dz, ft.input, ft.list, ft.stateKey));
-setupDropzone('dz-gutrade','input-gutrade','list-gutrade','gutradeFiles');
-setupDropzone('dz-retail','input-retail','list-retail','retailFiles');
-setupDropzone('dz-link','input-link','list-link','linkFiles');
-setupDropzone('dz-nomina','input-nomina','list-nomina','nominaFiles');
+DROPZONES.forEach(setupDropzone);
+
 
 document.getElementById('btn-limpiar').addEventListener('click', () => {
   state[currentBrand] = emptyBrandState();
@@ -1133,11 +1190,17 @@ document.getElementById('btn-limpiar').addEventListener('click', () => {
   lastVisitasRaw = []; lastRoster = {};
 });
 
+function describeError(err){
+  if(!err) return 'error desconocido';
+  if(err.message) return err.message;
+  if(err.type) return 'no se pudo leer el archivo (evento del navegador: "' + err.type + '")';
+  try{ return JSON.stringify(err); }catch(e){ return String(err); }
+}
 function readFileAsArrayBuffer(file){
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo "' + file.name + '" (' + describeError(reader.error) + ').'));
     reader.readAsArrayBuffer(file);
   });
 }
@@ -1176,27 +1239,35 @@ document.getElementById('btn-procesar').addEventListener('click', async () => {
 
   try{
     for(const f of s.gutradeFiles){
-      const buf = await readFileAsArrayBuffer(f);
-      const wb = readWorkbookFromArrayBuffer(buf);
-      freshGutradeRecords = freshGutradeRecords.concat(extractGutrade(wb, f.name));
+      try{
+        const buf = await readFileAsArrayBuffer(f);
+        const wb = readWorkbookFromArrayBuffer(buf);
+        freshGutradeRecords = freshGutradeRecords.concat(extractGutrade(wb, f.name));
+      }catch(err){ throw new Error('Gutrade — archivo "'+f.name+'": '+describeError(err)); }
     }
     for(const f of s.retailFiles){
-      const buf = await readFileAsArrayBuffer(f);
-      const wb = readWorkbookFromArrayBuffer(buf);
-      freshRetailRecords = freshRetailRecords.concat(extractRetail(wb, f.name));
+      try{
+        const buf = await readFileAsArrayBuffer(f);
+        const wb = readWorkbookFromArrayBuffer(buf);
+        freshRetailRecords = freshRetailRecords.concat(extractRetail(wb, f.name));
+      }catch(err){ throw new Error('Retail — archivo "'+f.name+'": '+describeError(err)); }
     }
     for(const f of s.linkFiles){
-      const buf = await readFileAsArrayBuffer(f);
-      const wb = readWorkbookFromArrayBuffer(buf);
-      freshLinkRecords = freshLinkRecords.concat(extractLink(wb, f.name));
+      try{
+        const buf = await readFileAsArrayBuffer(f);
+        const wb = readWorkbookFromArrayBuffer(buf);
+        freshLinkRecords = freshLinkRecords.concat(extractLink(wb, f.name));
+      }catch(err){ throw new Error('Link de Marcación — archivo "'+f.name+'": '+describeError(err)); }
     }
     for(const f of s.nominaFiles){
-      const buf = await readFileAsArrayBuffer(f);
-      const wb = readWorkbookFromArrayBuffer(buf);
-      freshNominaRecords = freshNominaRecords.concat(extractNomina(wb, f.name));
+      try{
+        const buf = await readFileAsArrayBuffer(f);
+        const wb = readWorkbookFromArrayBuffer(buf);
+        freshNominaRecords = freshNominaRecords.concat(extractNomina(wb, f.name));
+      }catch(err){ throw new Error('Nómina — archivo "'+f.name+'": '+describeError(err)); }
     }
   }catch(err){
-    statusEl.textContent = 'Error al leer archivos: ' + err.message;
+    statusEl.textContent = 'Error al leer archivos: ' + describeError(err);
     document.getElementById('btn-procesar').disabled = false;
     return;
   }
@@ -1503,16 +1574,18 @@ document.getElementById('btn-procesar-form').addEventListener('click', async () 
     for(const ft of FORM_TYPES){
       let fresh = [];
       for(const f of s[ft.stateKey]){
-        const buf = await readFileAsArrayBuffer(f);
-        const wb = readWorkbookFromArrayBuffer(buf);
-        fresh = fresh.concat(extractFormulario(wb, f.name, ft.key));
+        try{
+          const buf = await readFileAsArrayBuffer(f);
+          const wb = readWorkbookFromArrayBuffer(buf);
+          fresh = fresh.concat(extractFormulario(wb, f.name, ft.key));
+        }catch(err){ throw new Error(ft.label+' — archivo "'+f.name+'": '+describeError(err)); }
       }
       const combinado = (persisted['form_'+ft.key] || []).concat(fresh);
       registrosPorCategoria[ft.key] = combinado;
       if(fresh.length > 0) await saveFormPersisted(currentBrand, ft.key, combinado);
     }
   }catch(err){
-    statusEl.textContent = 'Error al leer formularios: ' + err.message;
+    statusEl.textContent = 'Error al leer formularios: ' + describeError(err);
     btn.disabled = false;
     return;
   }
